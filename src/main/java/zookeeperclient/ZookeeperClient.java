@@ -1,9 +1,8 @@
 package zookeeperclient;
 
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.*;
+import org.apache.zookeeper.data.Stat;
+import org.omg.CORBA.WStringSeqHelper;
 
 import java.util.List;
 
@@ -52,5 +51,17 @@ public class ZookeeperClient {
             return null;
         }
 
+    }
+    public Stat exists(String path, Watcher watcher) throws InterruptedException, KeeperException {
+        Stat exists;
+        try
+        {
+           exists = this.zk.exists(path, watcher);
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (KeeperException e) {
+            throw e;
+        }
+        return exists;
     }
 }
