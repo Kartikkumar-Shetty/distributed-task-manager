@@ -3,21 +3,22 @@ package zookeeperclient;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 
-public class TaskManager implements Watcher {
+
+public class TaskManager implements Watcher, Runnable {
     ZookeeperClient client;
     String nodeID;
     String nodeBasePath;
     String nodeRegPath;
     Boolean isLeader;
-    public TaskManager(String host, int timeout){
+    ITaskHandler handler;
+    public TaskManager(String host, int timeout, ITaskHandler handler){
         client = new ZookeeperClient(host, timeout);
         nodeBasePath = "/leaderelection";
         nodeRegPath = nodeBasePath + "/node";
+        this.handler = handler;
     }
 
     public void electLeader() throws KeeperException
@@ -50,8 +51,9 @@ public class TaskManager implements Watcher {
         {
             System.out.println("I am not the leader");
             isLeader=false;
-
         }
+        Thread t = new Thread(this);
+        t.run();
         this.setWatch(nodeBasePath + "/" + smallestNode);
 
     }
@@ -99,6 +101,18 @@ public class TaskManager implements Watcher {
         }
         catch (KeeperException | InterruptedException e) {
             System.out.println(e.toString());
+        }
+    }
+
+    @Override
+    public void run() {
+        if (this.isLeader)
+        {
+            this.handler.LeaderCallback();
+        }
+        else
+        {
+            this.handler.FollowerCallback();
         }
     }
 }
