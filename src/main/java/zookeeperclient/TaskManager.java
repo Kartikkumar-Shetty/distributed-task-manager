@@ -3,22 +3,42 @@ package zookeeperclient;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
-
-
-public class TaskManager implements Watcher, Runnable {
+public class TaskManager extends Thread implements Watcher, Runnable {
+    String host;
+    int timeout;
+    ITaskHandler handler;
     ZookeeperClient client;
     String nodeID;
     String nodeBasePath;
     String nodeRegPath;
     Boolean isLeader;
-    ITaskHandler handler;
-    public TaskManager(String host, int timeout, ITaskHandler handler){
+    taskType taskType;
+    List<Scheduler> schedules;
+    ScheduledExecutorService schedulerService = Executors.newScheduledThreadPool(1);
+    List<ScheduledFuture<?>> scheduledFutures;
+
+    Thread t;
+    public TaskManager(String host, int timeout, taskType taskType, List<Scheduler> schedules){
+
+        this.host=host;
+        this.timeout = timeout;
+        this.taskType= taskType;
+        this.schedules= schedules;
+        scheduledFutures = new ArrayList<ScheduledFuture<?>>();
+        connectToZookeeper(host, timeout);
+    }
+
+    private void connectToZookeeper(String host, int timeout) {
         client = new ZookeeperClient(host, timeout);
         nodeBasePath = "/leaderelection";
         nodeRegPath = nodeBasePath + "/node";
-        this.handler = handler;
     }
 
     public void electLeader() throws KeeperException
@@ -38,6 +58,13 @@ public class TaskManager implements Watcher, Runnable {
     }
 
     private void runElection() throws KeeperException, InterruptedException {
+        if(t!=null){
+            t.interrupt();
+            for (ScheduledFuture<?> s:this.scheduledFutures)
+            {
+                s.cancel(false);
+            }
+        }
         List<String> children = client.getChildren(nodeBasePath);
         String smallestNode = this.getLowestNode(children);
         System.out.println("Smallest Node:" + smallestNode + ", me:"+ this.nodeID);
@@ -52,9 +79,17 @@ public class TaskManager implements Watcher, Runnable {
             System.out.println("I am not the leader");
             isLeader=false;
         }
-        Thread t = new Thread(this);
-        t.run();
+
+        if (isLeader && children.size()>1) {
+            if (this.taskType == taskType.ROLLING) {
+                this.client.deleteNode(nodeBasePath + "/" + smallestNode);
+                this.electLeader();
+                return;
+            }
+        }
         this.setWatch(nodeBasePath + "/" + smallestNode);
+        t= new Thread(this);
+        t.run();
 
     }
     public String getLowestNode(List<String> nodes)
@@ -105,14 +140,37 @@ public class TaskManager implements Watcher, Runnable {
     }
 
     @Override
-    public void run() {
-        if (this.isLeader)
+    public void run()
+    {
+         for (int i = 0; i < this.schedules.size(); i++)
+         {
+             Scheduler s = schedules.get(i);
+             ScheduledFuture<?> future = this.schedulerService.scheduleWithFixedDelay(this.scheduleRunner(s.jobName),
+                     s.schedule.initialDelayInSeconds,
+                     s.schedule.periodInSeconds,
+                     TimeUnit.SECONDS);
+             this.scheduledFutures.add(future);
+
+            }
+
+    }
+    public Runnable scheduleRunner(String jobName)
+    {
+        System.out.println("Running Schedule Runner");
+        if(isLeader)
         {
-            this.handler.LeaderCallback();
+            System.out.println("I am the leader");
+            for (int i = 0; i < this.schedules.size(); i++)
+            {
+                if (schedules.get(i).jobName == jobName)
+                {
+                    System.out.println("running job");
+                    return schedules.get(i).job.execute();
+                }
+            }
+            System.out.println("job not found");
         }
-        else
-        {
-            this.handler.FollowerCallback();
-        }
+        return ()->System.out.println("Wont Execute Not a leader");
     }
 }
+

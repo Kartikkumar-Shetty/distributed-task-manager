@@ -1,13 +1,16 @@
 package zookeeperclient;
 
+
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
-import org.omg.CORBA.WStringSeqHelper;
+
 
 import java.util.List;
 
 public class ZookeeperClient {
     ZooKeeper zk;
+    private String path;
+
     public ZookeeperClient(String host, int timeout)
     {
         try
@@ -63,5 +66,15 @@ public class ZookeeperClient {
             throw e;
         }
         return exists;
+    }
+    public void disconnect() throws InterruptedException {
+        try {
+            this.zk.close();
+        } catch (InterruptedException e) {
+            throw e;
+        }
+    }
+    public void deleteNode(String path) throws KeeperException, InterruptedException {
+        this.zk.delete(path, 0);
     }
 }
