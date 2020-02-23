@@ -20,6 +20,7 @@ public class TaskManager extends Thread implements Watcher, Runnable {
     String nodeRegPath;
     Boolean isLeader;
     taskType taskType;
+    List<String> children;
     List<Scheduler> schedules;
     ScheduledExecutorService schedulerService = Executors.newScheduledThreadPool(1);
     List<ScheduledFuture<?>> scheduledFutures;
@@ -56,6 +57,9 @@ public class TaskManager extends Thread implements Watcher, Runnable {
             System.out.println("Exception: "+ ex);
         }
     }
+    private List<String> getChildrenList(String path, boolean toWatch) throws KeeperException, InterruptedException {
+        return this.client.getChildren(nodeBasePath,toWatch, this);
+    }
 
     private void runElection() throws KeeperException, InterruptedException {
         if(t!=null){
@@ -65,7 +69,8 @@ public class TaskManager extends Thread implements Watcher, Runnable {
                 s.cancel(false);
             }
         }
-        List<String> children = client.getChildren(nodeBasePath);
+        this.children = this.getChildrenList(this.nodeBasePath,false);
+
         String smallestNode = this.getLowestNode(children);
         System.out.println("Smallest Node:" + smallestNode + ", me:"+ this.nodeID);
 
@@ -73,11 +78,13 @@ public class TaskManager extends Thread implements Watcher, Runnable {
         {
             System.out.println("I am the leader");
             isLeader=true;
+            this.getChildrenList(nodeBasePath,true);
         }
         else
         {
             System.out.println("I am not the leader");
             isLeader=false;
+            this.setWatch(nodeBasePath + "/" + smallestNode);
         }
 
         if (isLeader && children.size()>1) {
@@ -87,7 +94,6 @@ public class TaskManager extends Thread implements Watcher, Runnable {
                 return;
             }
         }
-        this.setWatch(nodeBasePath + "/" + smallestNode);
         t= new Thread(this);
         t.run();
 
@@ -130,12 +136,26 @@ public class TaskManager extends Thread implements Watcher, Runnable {
 
     @Override
     public void process(WatchedEvent event) {
-        System.out.println("watch Called");
-        try {
-            this.runElection();
+        System.out.println("State:" + event.getState());
+        System.out.println("Type:" + event.getType());
+        if (event.getType().toString() == "NodeChildrenChanged")
+        {
+            try
+            {
+                this.children = this.getChildrenList(nodeBasePath,true);
+            }
+            catch (KeeperException | InterruptedException e) {
+                System.out.println(e.toString());
+            }
         }
-        catch (KeeperException | InterruptedException e) {
-            System.out.println(e.toString());
+        if (event.getType().toString()=="NodeDeleted")
+        {
+            try {
+                this.runElection();
+            }
+            catch (KeeperException | InterruptedException e) {
+                System.out.println(e.toString());
+            }
         }
     }
 
@@ -173,4 +193,3 @@ public class TaskManager extends Thread implements Watcher, Runnable {
         return ()->System.out.println("Wont Execute Not a leader");
     }
 }
-

@@ -40,11 +40,18 @@ public class ZookeeperClient {
         }
         return "";
     }
-    public List<String> getChildren(String path) throws InterruptedException, KeeperException {
+    public List<String> getChildren(String path,boolean toWatch, Watcher watcher) throws InterruptedException, KeeperException {
         List<String> children;
         try
         {
-            children = this.zk.getChildren(path,false);
+            if (!toWatch)
+            {
+                children = this.zk.getChildren(path, false);
+            }
+            else
+            {
+                children = this.zk.getChildren(path,watcher);
+            }
             return children;
         }
         catch (Exception e)
