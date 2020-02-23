@@ -1,5 +1,6 @@
 package zookeeperclient;
 
+import javafx.util.Pair;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 
@@ -70,40 +71,48 @@ public class TaskManager extends Thread implements Watcher, Runnable {
             }
         }
         this.children = this.getChildrenList(this.nodeBasePath,false);
+        int myPosition = this.getMyPosition(children, this.nodeID);
+        System.out.println("My Final Position:" + myPosition);
+        System.out.println("Smallest Node:" + this.children.get(myPosition) + ", me:"+ this.nodeID + ", mypodition:" + myPosition);
 
-        String smallestNode = this.getLowestNode(children);
-        System.out.println("Smallest Node:" + smallestNode + ", me:"+ this.nodeID);
-
-        if (smallestNode.equals(nodeID))
+        if (myPosition==0)
         {
             System.out.println("I am the leader");
             isLeader=true;
-            this.getChildrenList(nodeBasePath,true);
         }
         else
         {
             System.out.println("I am not the leader");
             isLeader=false;
-            this.setWatch(nodeBasePath + "/" + smallestNode);
+            this.setWatch(nodeBasePath + "/" + this.children.get(myPosition-1));
         }
 
-        if (isLeader && children.size()>1) {
+        this.getChildrenList(nodeBasePath,true);
+       /* if (isLeader && children.size()>1) {
             if (this.taskType == taskType.ROLLING) {
-                this.client.deleteNode(nodeBasePath + "/" + smallestNode);
+                this.client.deleteNode(nodeBasePath + "/" + this.children.get(myPosition-1));
                 this.electLeader();
                 return;
             }
-        }
+        }*/
         t= new Thread(this);
         t.run();
 
     }
-    public String getLowestNode(List<String> nodes)
+    public int getMyPosition(List<String> nodes, String nodeID)
     {
         System.out.println("Trying to Sort");
         nodes.sort(this::compareNodes);
-        return nodes.get(0);
+        for (int i=0;i<nodes.size();i++)
+        {
+            if (nodes.get(i).equals(nodeID))
+            {
+                return i;
+            }
+        }
+        return -1;
     }
+
     public int compareNodes(String node1, String node2)
     {
         int n1 = Integer.parseInt(node1.replace("node",""));
@@ -119,8 +128,7 @@ public class TaskManager extends Thread implements Watcher, Runnable {
     private void setWatch(String path) throws KeeperException, InterruptedException {
         try
         {
-            System.out.println("Setting Watch");
-            System.out.println(path);
+            System.out.println("Setting Watch for Path: " + path);
             Stat exists = this.client.exists(path, this);
             System.out.println("Watch Added, Node Info: " + exists.toString());
         }
@@ -170,16 +178,13 @@ public class TaskManager extends Thread implements Watcher, Runnable {
                      s.schedule.periodInSeconds,
                      TimeUnit.SECONDS);
              this.scheduledFutures.add(future);
-
             }
-
     }
     public Runnable scheduleRunner(String jobName)
     {
-        System.out.println("Running Schedule Runner");
+        System.out.println("ScheduleRunner Job Name:" + jobName);
         if(isLeader)
         {
-            System.out.println("I am the leader");
             for (int i = 0; i < this.schedules.size(); i++)
             {
                 if (schedules.get(i).jobName == jobName)
