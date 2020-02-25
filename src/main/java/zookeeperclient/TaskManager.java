@@ -11,7 +11,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class TaskManager extends Thread implements Watcher, Runnable {
+public class TaskManager extends Thread implements Watcher, Runnable
+{
     String host;
     int timeout;
     ITaskHandler handler;
@@ -25,6 +26,7 @@ public class TaskManager extends Thread implements Watcher, Runnable {
     List<Scheduler> schedules;
     ScheduledExecutorService schedulerService = Executors.newScheduledThreadPool(1);
     List<ScheduledFuture<?>> scheduledFutures;
+    int myPosition;
 
     Thread t;
     public TaskManager(String host, int timeout, taskType taskType, List<Scheduler> schedules){
@@ -63,7 +65,8 @@ public class TaskManager extends Thread implements Watcher, Runnable {
     }
 
     private void runElection() throws KeeperException, InterruptedException {
-        if(t!=null){
+        if(t!=null)
+        {
             t.interrupt();
             for (ScheduledFuture<?> s:this.scheduledFutures)
             {
@@ -71,9 +74,8 @@ public class TaskManager extends Thread implements Watcher, Runnable {
             }
         }
         this.children = this.getChildrenList(this.nodeBasePath,false);
-        int myPosition = this.getMyPosition(children, this.nodeID);
-        System.out.println("My Final Position:" + myPosition);
-        System.out.println("Smallest Node:" + this.children.get(myPosition) + ", me:"+ this.nodeID + ", mypodition:" + myPosition);
+        myPosition = this.getMyPosition(children, this.nodeID);
+        System.out.println("Smallest Node:" + this.children.get(myPosition) + ", me:"+ this.nodeID + ", my position:" + myPosition);
 
         if (myPosition==0)
         {
@@ -182,19 +184,50 @@ public class TaskManager extends Thread implements Watcher, Runnable {
     }
     public Runnable scheduleRunner(String jobName)
     {
-        System.out.println("ScheduleRunner Job Name:" + jobName);
-        if(isLeader)
-        {
-            for (int i = 0; i < this.schedules.size(); i++)
-            {
-                if (schedules.get(i).jobName == jobName)
-                {
-                    System.out.println("running job");
-                    return schedules.get(i).job.execute();
+        //if(isLeader)
+        //{
+        return () -> {
+            for (int i = 0; i < this.schedules.size(); i++) {
+                //System.out.println("comparing schedule name: " + schedules.get(i).jobName + " and job name:" + jobName);
+                if (schedules.get(i).jobName == jobName && this.canExecuteJob(i, this.myPosition)) {
+                    //System.out.println("running job");
+                    schedules.get(i).job.execute();
+                    break;
                 }
             }
-            System.out.println("job not found");
+            //System.out.println("job not found: " + jobName);
+        };
+        //}
+
+    }
+    private boolean canExecuteJob(int jobPosition, int myPosition)
+    {
+        int nodecount = this.children.size();
+        if (nodecount==1)
+        {
+            //System.out.println("Only one node");
+            return true;
         }
-        return ()->System.out.println("Wont Execute Not a leader");
+        else
+        {
+            if (jobPosition<nodecount)
+            {
+                if (jobPosition == myPosition)
+                {
+                    //System.out.println("matches my position: " + jobPosition);
+                    return true;
+                }
+            }
+            else
+            {
+                //System.out.println("checking for mod for : " + jobPosition + ", mod " + nodecount  + ", value:" + (jobPosition%nodecount));
+                if ((jobPosition%nodecount) == myPosition)
+                {
+                    //System.out.println("matches my mod position: " + myPosition);
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

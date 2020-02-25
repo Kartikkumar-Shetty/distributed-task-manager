@@ -27,8 +27,11 @@ class startZookeeper implements Runnable, ITaskHandler
     @Override
     public void run() {
         schedules = new ArrayList<>();
-        schedules.add(new Scheduler("job1", new Schedule(2,2),new sch1()));
-        schedules.add(new Scheduler("job2", new Schedule(3,3),new sch2()));
+        schedules.add(new Scheduler("job1", new Schedule(2,2),new sch("job1")));
+        schedules.add(new Scheduler("job2", new Schedule(3,2),new sch("job2")));
+        schedules.add(new Scheduler("job3", new Schedule(3,2),new sch("job3")));
+        schedules.add(new Scheduler("job4", new Schedule(2,2),new sch("job4")));
+        schedules.add(new Scheduler("job5", new Schedule(3,2),new sch("job5")));
         System.out.println("Hello Zookeeper");
         try
         {
@@ -49,17 +52,14 @@ class startZookeeper implements Runnable, ITaskHandler
         System.out.println("I am the folower handler");
     }
 }
-class sch1 implements IJob
+class sch implements IJob
 {
-    @Override
-    public Runnable execute() {
-        return()-> System.out.println("This is a job1");
+    String message;
+    public sch(String message){
+        this.message = message;
     }
-}
-class sch2 implements IJob
-{
     @Override
-    public Runnable execute() {
-        return()->  System.out.println("This is a job2");
+    public void execute() {
+        System.out.println("This is a " + message);
     }
 }
