@@ -36,7 +36,7 @@ class startZookeeper implements Runnable, ITaskHandler
         try
         {
             new TaskManager("127.0.0.1:2181", 3000,  taskType.ROLLING, schedules).electLeader();
-        } catch (KeeperException e) {
+        } catch (KeeperException | InterruptedException e) {
             System.out.println(e.toString());
         }
 

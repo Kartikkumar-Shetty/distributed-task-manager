@@ -1,6 +1,5 @@
 package zookeeperclient;
 
-import javafx.util.Pair;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 
@@ -20,88 +19,103 @@ public class TaskManager extends Thread implements Watcher, Runnable
     String nodeID;
     String nodeBasePath;
     String nodeRegPath;
-    Boolean isLeader;
+    int myPosition;
     taskType taskType;
     List<String> children;
     List<Scheduler> schedules;
     ScheduledExecutorService schedulerService = Executors.newScheduledThreadPool(1);
     List<ScheduledFuture<?>> scheduledFutures;
-    int myPosition;
+
 
     Thread t;
-    public TaskManager(String host, int timeout, taskType taskType, List<Scheduler> schedules){
+    public TaskManager(String host, int timeout, taskType taskType, List<Scheduler> schedules)
+    {
 
         this.host=host;
         this.timeout = timeout;
         this.taskType= taskType;
         this.schedules= schedules;
         scheduledFutures = new ArrayList<ScheduledFuture<?>>();
-        connectToZookeeper(host, timeout);
-    }
-
-    private void connectToZookeeper(String host, int timeout) {
+        //connectToZookeeper(host, timeout);
         client = new ZookeeperClient(host, timeout);
         nodeBasePath = "/leaderelection";
         nodeRegPath = nodeBasePath + "/node";
     }
 
-    public void electLeader() throws KeeperException
-    {
-        try
-        {
-            System.out.println("Trying to win Election");
-            client.create(nodeBasePath, CreateMode.PERSISTENT);
-            String node = client.create(nodeRegPath, CreateMode.EPHEMERAL_SEQUENTIAL);
-            this.nodeID = getNode(node);
-            this.runElection();
-        }
-        catch (Exception ex)
-        {
-            System.out.println("Exception: "+ ex);
-        }
+/*    private void connectToZookeeper(String host, int timeout) {
+        client = new ZookeeperClient(host, timeout);
+        nodeBasePath = "/leaderelection";
+        nodeRegPath = nodeBasePath + "/node";
     }
+*/
+
+    public void electLeader() throws KeeperException, InterruptedException {
+            System.out.println("Trying to win Election");
+            setupNodes();
+            this.runElection();
+    }
+
+    private void setupNodes() throws KeeperException, InterruptedException {
+        System.out.println("creating nodes Persistent");
+        client.create(nodeBasePath, CreateMode.PERSISTENT);
+        System.out.println("creating nodes Ephemeral");
+        String node = client.create(nodeRegPath, CreateMode.EPHEMERAL_SEQUENTIAL);
+        System.out.println("done");
+        this.nodeID = getNode(node);
+    }
+
     private List<String> getChildrenList(String path, boolean toWatch) throws KeeperException, InterruptedException {
         return this.client.getChildren(nodeBasePath,toWatch, this);
     }
 
-    private void runElection() throws KeeperException, InterruptedException {
-        if(t!=null)
-        {
-            t.interrupt();
-            for (ScheduledFuture<?> s:this.scheduledFutures)
-            {
-                s.cancel(false);
-            }
-        }
+    private void runElection() throws KeeperException, InterruptedException
+    {
+        stopAllJobs();
         this.children = this.getChildrenList(this.nodeBasePath,false);
+
         myPosition = this.getMyPosition(children, this.nodeID);
         System.out.println("Smallest Node:" + this.children.get(myPosition) + ", me:"+ this.nodeID + ", my position:" + myPosition);
 
-        if (myPosition==0)
-        {
-            System.out.println("I am the leader");
-            isLeader=true;
-        }
-        else
-        {
-            System.out.println("I am not the leader");
-            isLeader=false;
+        if (!isLeader()){
             this.setWatch(nodeBasePath + "/" + this.children.get(myPosition-1));
         }
-
         this.getChildrenList(nodeBasePath,true);
-       /* if (isLeader && children.size()>1) {
-            if (this.taskType == taskType.ROLLING) {
-                this.client.deleteNode(nodeBasePath + "/" + this.children.get(myPosition-1));
-                this.electLeader();
-                return;
-            }
-        }*/
         t= new Thread(this);
         t.run();
 
     }
-    public int getMyPosition(List<String> nodes, String nodeID)
+
+    protected boolean isLeader() {
+        if (myPosition==0)
+        {
+            System.out.println("I am the leader");
+            return true;
+        }
+        else
+        {
+            System.out.println("I am not the leader");
+            return false;
+        }
+    }
+
+    private void stopAllJobs()
+    {
+        try {
+
+            if (t != null) {
+                t.interrupt();
+                for (ScheduledFuture<?> s : this.scheduledFutures) {
+                    s.cancel(false);
+                }
+            }
+        }
+        catch(Exception e)
+        {
+            System.out.println("Error in stopping jobs, Exception:" + e);
+        }
+    }
+
+    private int getMyPosition(List<String> nodes, String nodeID)
     {
         System.out.println("Trying to Sort");
         nodes.sort(this::compareNodes);
@@ -115,7 +129,7 @@ public class TaskManager extends Thread implements Watcher, Runnable
         return -1;
     }
 
-    public int compareNodes(String node1, String node2)
+    private int compareNodes(String node1, String node2)
     {
         int n1 = Integer.parseInt(node1.replace("node",""));
         int n2 = Integer.parseInt(node2.replace("node",""));
@@ -127,16 +141,12 @@ public class TaskManager extends Thread implements Watcher, Runnable
         return nodeComponents[nodeComponents.length-1];
     }
 
-    private void setWatch(String path) throws KeeperException, InterruptedException {
+    protected void setWatch(String path) {
         try
         {
             System.out.println("Setting Watch for Path: " + path);
             Stat exists = this.client.exists(path, this);
             System.out.println("Watch Added, Node Info: " + exists.toString());
-        }
-        catch(KeeperException e)
-        {
-            System.out.println("Keeper Exception");
         }
         catch(Exception e)
         {
@@ -145,7 +155,18 @@ public class TaskManager extends Thread implements Watcher, Runnable
     }
 
     @Override
-    public void process(WatchedEvent event) {
+    public void process(WatchedEvent event)
+    {
+        try {
+            processWatch(event);
+        } catch (KeeperException e) {
+            System.out.println("Exception:" + e);
+        } catch (InterruptedException e) {
+            System.out.println("Exception:" + e);
+        }
+    }
+
+    protected void processWatch(WatchedEvent event) throws KeeperException, InterruptedException {
         System.out.println("State:" + event.getState());
         System.out.println("Type:" + event.getType());
         if (event.getType().toString() == "NodeChildrenChanged")
@@ -155,7 +176,7 @@ public class TaskManager extends Thread implements Watcher, Runnable
                 this.children = this.getChildrenList(nodeBasePath,true);
             }
             catch (KeeperException | InterruptedException e) {
-                System.out.println(e.toString());
+                throw e;
             }
         }
         if (event.getType().toString()=="NodeDeleted")
@@ -164,7 +185,7 @@ public class TaskManager extends Thread implements Watcher, Runnable
                 this.runElection();
             }
             catch (KeeperException | InterruptedException e) {
-                System.out.println(e.toString());
+                throw e;
             }
         }
     }
@@ -200,7 +221,7 @@ public class TaskManager extends Thread implements Watcher, Runnable
         //}
 
     }
-    private boolean canExecuteJob(int jobPosition, int myPosition)
+    protected boolean canExecuteJob(int jobPosition, int myPosition)
     {
         int nodecount = this.children.size();
         if (nodecount==1)
